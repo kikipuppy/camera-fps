@@ -1,0 +1,681 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#0a0a0f">
+<title>像素机甲对战</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; user-select: none; -webkit-user-select: none; }
+  html, body {
+    background: #0a0a0f;
+    color: #e5e5e5;
+    font-family: "Courier New", monospace;
+    overflow: hidden;
+    width: 100%;
+    height: 100%;
+    touch-action: none;
+    overscroll-behavior: none;
+  }
+  body {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    padding-top: env(safe-area-inset-top);
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+
+  #stage {
+    flex: 1 1 auto;         /* 占据剩余空间 */
+    min-height: 0;          /* 允许收缩 */
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 6px;
+    overflow: hidden;
+  }
+
+  canvas {
+    background: #111;
+    image-rendering: pixelated;
+    image-rendering: crisp-edges;
+    border-radius: 4px;
+    box-shadow: 0 0 20px rgba(255, 200, 0, 0.15);
+  }
+
+  .hint {
+    font-size: 11px;
+    color: #777;
+    text-align: center;
+    margin: 4px 0 0 0;
+    line-height: 1.6;
+    padding: 0 8px;
+  }
+
+  /* ===== 触屏按键 (文档流, 不遮挡画面) ===== */
+  .controls-bar {
+    flex: 0 0 auto;
+    width: 100%;
+    height: 30vh;
+    min-height: 120px;
+    max-height: 220px;
+    pointer-events: none;
+    display: flex;
+    justify-content: space-between;
+    padding: 6px 14px 6px;
+    background: linear-gradient(to top, rgba(0,0,0,0.55), rgba(0,0,0,0));
+  }
+  .pad {
+    pointer-events: none;
+    display: flex;
+    gap: 8px;
+    align-items: center;
+  }
+  .pad.right { flex-direction: row-reverse; }
+
+  .btn {
+    pointer-events: auto;
+    -webkit-appearance: none;
+    appearance: none;
+    border: 2px solid #555;
+    background: rgba(40,40,50,0.75);
+    color: #ddd;
+    border-radius: 14px;
+    font-family: inherit;
+    font-weight: bold;
+    backdrop-filter: blur(4px);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 3px 0 #222, inset 0 1px 0 rgba(255,255,255,0.1);
+    transition: transform 0.05s;
+    touch-action: none;
+  }
+  .btn:active, .btn.active {
+    transform: translateY(2px);
+    box-shadow: 0 1px 0 #222, inset 0 1px 0 rgba(255,255,255,0.1);
+    background: rgba(80,80,100,0.85);
+  }
+  .btn .lbl { font-size: 11px; opacity: 0.85; margin-top: 2px; }
+
+  /* 方向键十字 */
+  .dpad {
+    pointer-events: none;
+    width: 132px; height: 132px;
+    position: relative;
+  }
+  .dpad .btn {
+    position: absolute;
+    width: 44px; height: 44px;
+    border-radius: 10px;
+    font-size: 18px;
+  }
+  .dpad .up    { top: 0;    left: 44px; }
+  .dpad .down  { bottom: 0; left: 44px; }
+  .dpad .left  { left: 0;   top: 44px; }
+  .dpad .right { right: 0;  top: 44px; }
+
+  /* 动作按钮 */
+  .action-col {
+    pointer-events: none;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    align-items: center;
+  }
+  .abtn {
+    width: 56px; height: 56px;
+    border-radius: 50%;
+    font-size: 13px;
+    border-width: 2px;
+  }
+  .abtn.big { width: 68px; height: 68px; font-size: 15px; }
+
+  .p1-color { border-color: #3b82f6; }
+  .p1-color:active, .p1-color.active { background: rgba(59,130,246,0.45); }
+  .p2-color { border-color: #ef4444; }
+  .p2-color:active, .p2-color.active { background: rgba(239,68,68,0.45); }
+
+  .reset-bar {
+    pointer-events: auto;
+    position: fixed;
+    top: env(safe-area-inset-top);
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 20;
+    padding: 4px 10px;
+    font-size: 11px;
+    background: rgba(0,0,0,0.6);
+    border: 1px solid #555;
+    border-radius: 12px;
+    color: #ffcc33;
+  }
+
+  /* 横屏提示 (竖屏时显示) */
+  #rotate-tip {
+    position: fixed;
+    inset: 0;
+    background: #000;
+    color: #ffcc33;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+    z-index: 100;
+    font-size: 16px;
+    text-align: center;
+    padding: 24px;
+    gap: 16px;
+  }
+  #rotate-tip .icon {
+    font-size: 48px;
+    animation: spin 1.5s ease-in-out infinite;
+  }
+  @keyframes spin {
+    0%,100% { transform: rotate(0deg); }
+    50% { transform: rotate(90deg); }
+  }
+
+  /* 桌面端隐藏触屏按钮 */
+  @media (hover: hover) and (pointer: fine) {
+    .controls-bar { display: none; }
+    .reset-bar { display: none; }
+  }
+</style>
+</head>
+<body>
+
+<div id="stage">
+  <canvas id="game" width="800" height="400"></canvas>
+  <div class="hint" id="keyboard-hint">
+    桌面: P1 A/D/W/F/G &nbsp;·&nbsp; P2 ←/→/↑/J/K &nbsp;·&nbsp; R 重开
+  </div>
+</div>
+
+<button class="reset-bar" id="resetBtn">↻ 重开</button>
+
+<!-- 触屏按键条 (文档流内, 不遮挡画面) -->
+<div class="controls-bar" id="controlsBar">
+  <!-- P1 左侧 -->
+  <div class="pad">
+    <div class="dpad">
+      <button class="btn up p1-color"    data-key="p1_jump"   aria-label="P1 跳">▲<span class="lbl">跳</span></button>
+      <button class="btn left p1-color"  data-key="p1_left"   aria-label="P1 左">◀</button>
+      <button class="btn right p1-color" data-key="p1_right"  aria-label="P1 右">▶</button>
+      <button class="btn down p1-color"  data-key="p1_down"   aria-label="P1 下">▼</button>
+    </div>
+    <div class="action-col">
+      <button class="btn abtn p1-color big" data-key="p1_attack">F<span class="lbl">攻击</span></button>
+      <button class="btn abtn p1-color"     data-key="p1_defend">G<span class="lbl">防御</span></button>
+    </div>
+  </div>
+
+  <!-- P2 右侧 -->
+  <div class="pad right">
+    <div class="action-col">
+      <button class="btn abtn p2-color big" data-key="p2_attack">J<span class="lbl">攻击</span></button>
+      <button class="btn abtn p2-color"     data-key="p2_defend">K<span class="lbl">防御</span></button>
+    </div>
+    <div class="dpad">
+      <button class="btn up p2-color"    data-key="p2_jump"   aria-label="P2 跳">▲<span class="lbl">跳</span></button>
+      <button class="btn left p2-color"  data-key="p2_left"   aria-label="P2 左">◀</button>
+      <button class="btn right p2-color" data-key="p2_right"  aria-label="P2 右">▶</button>
+      <button class="btn down p2-color"  data-key="p2_down"   aria-label="P2 下">▼</button>
+    </div>
+  </div>
+</div>
+
+<div id="rotate-tip">
+  <div class="icon">📱</div>
+  <div>请横屏体验游戏</div>
+</div>
+
+<script>
+// ======== Canvas 响应式缩放 ========
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+ctx.imageSmoothingEnabled = false;
+const LOGICAL_W = canvas.width;   // 800
+const LOGICAL_H = canvas.height;  // 400
+
+function fitCanvas() {
+  const stage = document.getElementById('stage');
+  const hint = document.getElementById('keyboard-hint');
+  const hintH = hint ? hint.offsetHeight + 8 : 16;
+
+  // stage 已被 flex 自动限制了高度 (上面是 canvas, 下面是 controls-bar)
+  // 我们只需要从 stage 里留出 hint 的空间
+  const availW = stage.clientWidth - 12;
+  const availH = Math.max(40, stage.clientHeight - hintH - 12);
+
+  const scale = Math.min(availW / LOGICAL_W, availH / LOGICAL_H);
+  const cssW = Math.max(160, Math.floor(LOGICAL_W * scale));
+  const cssH = Math.max(80,  Math.floor(LOGICAL_H * scale));
+  canvas.style.width  = cssW + 'px';
+  canvas.style.height = cssH + 'px';
+
+  // 横屏检测
+  const isPortrait = window.innerHeight > window.innerWidth * 1.1;
+  document.getElementById('rotate-tip').style.display =
+    isPortrait && 'ontouchstart' in window ? 'flex' : 'none';
+}
+
+window.addEventListener('resize', fitCanvas);
+window.addEventListener('orientationchange', () => setTimeout(fitCanvas, 200));
+
+// ======== 游戏配置 ========
+const W = LOGICAL_W, H = LOGICAL_H;
+const GROUND_Y = 340;
+const GRAVITY = 0.6;
+const MOVE_SPEED = 3;
+const JUMP_POWER = 11;
+const ATTACK_DAMAGE = 10;
+const DEFEND_REDUCTION = 0.3;
+const ATTACK_COOLDOWN = 400;
+const HIT_STUN = 200;
+const KNOCKBACK = 5;
+const ATTACK_RANGE = 65;
+
+// ======== 输入系统 ========
+// 每个按键是 "p1_left", "p2_attack" 这样的逻辑名
+const input = {
+  // 键盘映射 (code -> 逻辑键)
+  keyboardMap: {
+    KeyA: 'p1_left',  KeyD: 'p1_right', KeyW: 'p1_jump', KeyF: 'p1_attack', KeyG: 'p1_defend',
+    ArrowLeft: 'p2_left', ArrowRight: 'p2_right', ArrowUp: 'p2_jump',
+    KeyJ: 'p2_attack', KeyK: 'p2_defend',
+  },
+  // 当前按下状态
+  state: {},
+  // 上一帧的"按下瞬间" (用于跳跃边沿触发)
+  pressed: {},
+  // 边沿触发检测用
+  _prev: {},
+};
+
+function updateInputFrame() {
+  // 计算 pressed: 上一帧没按, 这帧按下了
+  for (const k in input.state) {
+    input.pressed[k] = input.state[k] && !input._prev[k];
+  }
+  input._prev = { ...input.state };
+}
+
+// 键盘
+window.addEventListener('keydown', e => {
+  const k = input.keyboardMap[e.code];
+  if (k) { input.state[k] = true; e.preventDefault(); }
+  if (e.code === 'KeyR') resetGame();
+  if (['ArrowLeft','ArrowRight','ArrowUp','ArrowDown','Space'].includes(e.code)) e.preventDefault();
+});
+window.addEventListener('keyup', e => {
+  const k = input.keyboardMap[e.code];
+  if (k) { input.state[k] = false; e.preventDefault(); }
+});
+
+// 触摸按键 — 事件委托
+const touchButtons = document.querySelectorAll('.btn[data-key]');
+touchButtons.forEach(btn => {
+  const key = btn.dataset.key;
+  const on = e => { input.state[key] = true; btn.classList.add('active'); e.preventDefault(); };
+  const off = e => { input.state[key] = false; btn.classList.remove('active'); e.preventDefault(); };
+  btn.addEventListener('touchstart', on, { passive: false });
+  btn.addEventListener('touchend',   off, { passive: false });
+  btn.addEventListener('touchcancel',off, { passive: false });
+  btn.addEventListener('mousedown',  on);
+  btn.addEventListener('mouseup',    off);
+  btn.addEventListener('mouseleave',  off);
+});
+
+// 重置按钮
+document.getElementById('resetBtn').addEventListener('click', resetGame);
+
+// 构造 Mech 用的控制对象 (直接从 input.state 读取)
+function makePlayerInput(prefix) {
+  return {
+    left:   () => input.state[prefix + '_left'],
+    right:  () => input.state[prefix + '_right'],
+    defend: () => input.state[prefix + '_defend'],
+    jumpPressed:   () => input.pressed[prefix + '_jump'],
+    attackPressed:  () => input.pressed[prefix + '_attack'],
+  };
+}
+
+// ======== 像素机甲绘制 ========
+const PX = 2;
+const PALETTES = {
+  p1: { main: '#3b82f6', dark: '#1e3a8a', light: '#93c5fd', eye: '#ff3366', accent: '#60a5fa' },
+  p2: { main: '#ef4444', dark: '#7f1d1d', light: '#fca5a5', eye: '#33ffcc', accent: '#f87171' },
+};
+
+function drawMech(x, y, facing, palette, state, frame) {
+  ctx.save();
+  ctx.translate(x, y);
+  if (facing === -1) ctx.scale(-1, 1);
+  const s = PX;
+  const bob = (state === 'walk') ? Math.sin(frame * 0.3) * 2 : 0;
+  const hit = (state === 'hit') ? 0.6 : 1;
+  ctx.globalAlpha = hit;
+
+  const legOffset = (state === 'walk') ? Math.sin(frame * 0.3) * 3 : 0;
+  fillRect(-10*s, -8*s + bob, 6*s, 8*s, palette.dark);
+  fillRect(-10*s, -10*s + bob + legOffset, 6*s, 2*s, palette.main);
+  fillRect(4*s, -8*s + bob, 6*s, 8*s, palette.dark);
+  fillRect(4*s, -10*s + bob - legOffset, 6*s, 2*s, palette.main);
+  fillRect(-12*s, -2*s + bob, 10*s, 2*s, '#222');
+  fillRect(2*s, -2*s + bob, 10*s, 2*s, '#222');
+
+  const bodyY = -24*s + bob;
+  fillRect(-10*s, bodyY, 20*s, 14*s, palette.main);
+  fillRect(-10*s, bodyY, 20*s, 2*s, palette.light);
+  fillRect(-10*s, bodyY + 12*s, 20*s, 2*s, palette.dark);
+  fillRect(-4*s, bodyY + 4*s, 8*s, 6*s, palette.dark);
+  fillRect(-2*s, bodyY + 6*s, 4*s, 2*s, palette.accent);
+
+  const armY = bodyY + 3*s;
+  if (state === 'attack') {
+    fillRect(6*s, armY, 14*s, 4*s, palette.main);
+    fillRect(18*s, armY - 2*s, 6*s, 8*s, '#888');
+    fillRect(-12*s, armY, 6*s, 4*s, palette.dark);
+  } else if (state === 'defend') {
+    fillRect(-2*s, armY - 2*s, 14*s, 4*s, palette.dark);
+    fillRect(-2*s, armY + 2*s, 14*s, 4*s, palette.dark);
+    fillRect(10*s, armY - 6*s, 4*s, 14*s, palette.light);
+    fillRect(10*s, armY - 6*s, 4*s, 2*s, '#fff');
+  } else {
+    const sway = (state === 'walk') ? Math.sin(frame * 0.3) * 2 : 0;
+    fillRect(-14*s, armY + sway, 6*s, 10*s, palette.main);
+    fillRect(8*s, armY - sway, 6*s, 10*s, palette.main);
+    fillRect(-14*s, armY + sway, 6*s, 2*s, palette.light);
+    fillRect(8*s, armY - sway, 6*s, 2*s, palette.light);
+  }
+
+  const headY = bodyY - 10*s;
+  fillRect(-8*s, headY, 16*s, 10*s, palette.dark);
+  fillRect(-8*s, headY, 16*s, 2*s, palette.light);
+  fillRect(-6*s, headY + 3*s, 12*s, 4*s, '#111');
+  if (state === 'attack') {
+    fillRect(-4*s, headY + 4*s, 3*s, 2*s, '#ff0');
+    fillRect(1*s, headY + 4*s, 3*s, 2*s, '#ff0');
+  } else {
+    fillRect(-4*s, headY + 4*s, 3*s, 2*s, palette.eye);
+    fillRect(1*s, headY + 4*s, 3*s, 2*s, palette.eye);
+  }
+  fillRect(-2*s, headY - 2*s, 4*s, 2*s, palette.main);
+
+  ctx.restore();
+}
+
+function fillRect(x, y, w, h, color) {
+  ctx.fillStyle = color;
+  ctx.fillRect(Math.floor(x), Math.floor(y), Math.ceil(w), Math.ceil(h));
+}
+
+// ======== 粒子 ========
+const particles = [];
+function spawnHitEffect(x, y) {
+  for (let i = 0; i < 8; i++) {
+    particles.push({
+      x, y,
+      vx: (Math.random() - 0.5) * 6,
+      vy: (Math.random() - 0.8) * 5,
+      life: 30,
+      color: ['#ffcc00', '#ff6600', '#ffffff'][Math.floor(Math.random() * 3)]
+    });
+  }
+}
+function updateParticles() {
+  for (let i = particles.length - 1; i >= 0; i--) {
+    const p = particles[i];
+    p.x += p.vx; p.y += p.vy;
+    p.vy += 0.3;
+    p.life--;
+    if (p.life <= 0) particles.splice(i, 1);
+  }
+}
+function drawParticles() {
+  particles.forEach(p => {
+    ctx.fillStyle = p.color;
+    ctx.globalAlpha = p.life / 30;
+    ctx.fillRect(Math.floor(p.x), Math.floor(p.y), 3, 3);
+  });
+  ctx.globalAlpha = 1;
+}
+
+// ======== Mech ========
+class Mech {
+  constructor(x, palette, controls) {
+    this.x = x;
+    this.y = GROUND_Y;
+    this.vx = 0;
+    this.vy = 0;
+    this.facing = 1;
+    this.onGround = true;
+    this.hp = 100;
+    this.maxHp = 100;
+    this.palette = palette;
+    this.ctrl = controls;          // 对象: left/right/defend 返回 boolean, jumpPressed/attackPressed 边沿触发
+    this.attackCooldown = 0;
+    this.hitStun = 0;
+    this.state = 'idle';
+    this.defending = false;
+    this.frame = 0;
+    this.attackActive = 0;
+    this.hasHitThisSwing = false;
+  }
+
+  update(dt, opponent) {
+    this.frame++;
+    this.attackCooldown = Math.max(0, this.attackCooldown - dt);
+    this.hitStun = Math.max(0, this.hitStun - dt);
+
+    const locked = this.hitStun > 0;
+    this.defending = !locked && this.ctrl.defend() && this.onGround && this.attackCooldown === 0;
+
+    let moveX = 0;
+    if (!locked && !this.defending && this.attackActive === 0) {
+      if (this.ctrl.left())  moveX -= 1;
+      if (this.ctrl.right()) moveX += 1;
+      if (this.ctrl.jumpPressed() && this.onGround) {
+        this.vy = -JUMP_POWER;
+        this.onGround = false;
+      }
+      if (this.ctrl.attackPressed() && this.attackCooldown === 0) {
+        this.attackCooldown = ATTACK_COOLDOWN;
+        this.attackActive = 15;
+        this.hasHitThisSwing = false;
+      }
+    }
+
+    this.vx = moveX * MOVE_SPEED;
+    if (this.attackActive > 0) this.attackActive--;
+    if (this.defending) this.vx = 0;
+
+    this.vy += GRAVITY;
+    this.x += this.vx;
+    this.y += this.vy;
+
+    if (this.y >= GROUND_Y) {
+      this.y = GROUND_Y;
+      this.vy = 0;
+      this.onGround = true;
+    }
+    this.x = Math.max(25, Math.min(W - 25, this.x));
+
+    if (!locked && this.attackActive === 0) {
+      this.facing = opponent.x > this.x ? 1 : -1;
+    }
+
+    if (this.attackActive > 5 && this.attackActive < 13 && !this.hasHitThisSwing) {
+      const dist = Math.abs(opponent.x - this.x);
+      const sameSide = Math.sign(opponent.x - this.x) === this.facing;
+      if (dist < ATTACK_RANGE && sameSide) {
+        this.hasHitThisSwing = true;
+        let dmg = ATTACK_DAMAGE;
+        if (opponent.defending) dmg = Math.round(dmg * DEFEND_REDUCTION);
+        opponent.hp = Math.max(0, opponent.hp - dmg);
+        opponent.hitStun = HIT_STUN;
+        opponent.vx = this.facing * KNOCKBACK * (opponent.defending ? 0.3 : 1);
+        opponent.vy = -3;
+        opponent.onGround = false;
+        spawnHitEffect(opponent.x, opponent.y - 30);
+      }
+    }
+
+    if (this.hitStun > 0)              this.state = 'hit';
+    else if (this.attackActive > 0)    this.state = 'attack';
+    else if (this.defending)           this.state = 'defend';
+    else if (!this.onGround)            this.state = 'jump';
+    else if (Math.abs(this.vx) > 0.1)  this.state = 'walk';
+    else                               this.state = 'idle';
+  }
+
+  draw() {
+    drawMech(this.x, this.y, this.facing, this.palette, this.state, this.frame);
+    if (this.defending) {
+      ctx.strokeStyle = 'rgba(150,200,255,0.6)';
+      ctx.lineWidth = 2;
+      const shieldX = this.x + this.facing * 18;
+      ctx.beginPath();
+      ctx.arc(shieldX, this.y - 20, 22, -Math.PI/2, Math.PI/2);
+      ctx.stroke();
+    }
+  }
+}
+
+// ======== 背景 ========
+let bgFrame = 0;
+function drawBackground() {
+  const grad = ctx.createLinearGradient(0, 0, 0, GROUND_Y);
+  grad.addColorStop(0, '#1a0a2e');
+  grad.addColorStop(0.6, '#3d1a4d');
+  grad.addColorStop(1, '#5c2d3a');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, W, GROUND_Y);
+
+  ctx.fillStyle = '#2a1a3a';
+  for (let i = 0; i < 20; i++) {
+    const bx = i * 45;
+    const bh = 40 + ((i * 73) % 50);
+    ctx.beginPath();
+    ctx.moveTo(bx, GROUND_Y);
+    ctx.lineTo(bx + 22, GROUND_Y - bh);
+    ctx.lineTo(bx + 45, GROUND_Y);
+    ctx.fill();
+  }
+
+  for (let i = 0; i < 40; i++) {
+    const sx = (i * 137) % W;
+    const sy = (i * 71) % 150;
+    const twinkle = ((bgFrame + i * 13) % 60) < 30 ? '#ffffff' : '#8888aa';
+    ctx.fillStyle = twinkle;
+    ctx.fillRect(sx, sy, 2, 2);
+  }
+
+  ctx.fillStyle = '#2d1810';
+  ctx.fillRect(0, GROUND_Y, W, H - GROUND_Y);
+  ctx.fillStyle = '#4a2a1a';
+  ctx.fillRect(0, GROUND_Y, W, 4);
+
+  ctx.fillStyle = '#1a0a05';
+  for (let i = 0; i < W; i += 16) ctx.fillRect(i, GROUND_Y + 4, 1, H - GROUND_Y - 4);
+  for (let j = GROUND_Y + 20; j < H; j += 20) ctx.fillRect(0, j, W, 1);
+  bgFrame++;
+}
+
+// ======== HUD ========
+function drawHUD(p1, p2, winner) {
+  ctx.fillStyle = '#222';
+  ctx.fillRect(0, 0, W, 50);
+  ctx.fillStyle = '#444';
+  ctx.fillRect(0, 48, W, 2);
+
+  drawHpBar(20, 12, 240, 26, p1, '#3b82f6', '#1e3a8a', 'P1');
+  drawHpBar(W - 260, 12, 240, 26, p2, '#ef4444', '#7f1d1d', 'P2');
+
+  ctx.fillStyle = '#ffcc33';
+  ctx.font = 'bold 16px Courier New';
+  ctx.textAlign = 'center';
+  ctx.fillText('VS', W / 2, 30);
+
+  if (winner) {
+    ctx.fillStyle = 'rgba(0,0,0,0.75)';
+    ctx.fillRect(0, 0, W, H);
+    ctx.fillStyle = winner === 'draw' ? '#aaa' : (winner === 'p1' ? '#3b82f6' : '#ef4444');
+    ctx.font = 'bold 44px Courier New';
+    ctx.textAlign = 'center';
+    const msg = winner === 'draw' ? 'DRAW!' : (winner === 'p1' ? 'P1 WINS!' : 'P2 WINS!');
+    ctx.fillText(msg, W / 2, H / 2);
+    ctx.fillStyle = '#fff';
+    ctx.font = '14px Courier New';
+    ctx.fillText('点击 ↻ 或按 R 重新开始', W / 2, H / 2 + 36);
+  }
+}
+
+function drawHpBar(x, y, w, h, mech, color, darkColor, label) {
+  ctx.fillStyle = '#111';
+  ctx.fillRect(x, y, w, h);
+  const hpW = (mech.hp / mech.maxHp) * (w - 4);
+  ctx.fillStyle = darkColor;
+  ctx.fillRect(x + 2, y + 2, w - 4, h - 4);
+  ctx.fillStyle = color;
+  ctx.fillRect(x + 2, y + 2, hpW, h - 4);
+  if (mech.hp > 30) {
+    ctx.fillStyle = 'rgba(255,255,255,0.3)';
+    ctx.fillRect(x + 2, y + 2, hpW, 3);
+  }
+  ctx.strokeStyle = '#fff';
+  ctx.lineWidth = 1;
+  ctx.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
+  ctx.fillStyle = '#fff';
+  ctx.font = 'bold 12px Courier New';
+  ctx.textAlign = 'left';
+  ctx.fillText(`${label} ${mech.hp}/${mech.maxHp}`, x + 6, y + 18);
+}
+
+// ======== 主循环 ========
+let p1, p2, winner = null, lastTime = 0;
+
+function initGame() {
+  p1 = new Mech(180, PALETTES.p1, makePlayerInput('p1'));
+  p2 = new Mech(W - 180, PALETTES.p2, makePlayerInput('p2'));
+  winner = null;
+  particles.length = 0;
+}
+function resetGame() { initGame(); }
+
+function loop(ts) {
+  const dt = ts - lastTime;
+  lastTime = ts;
+  const step = Math.min(dt, 33);
+
+  updateInputFrame();
+
+  if (!winner) {
+    p1.update(step, p2);
+    p2.update(step, p1);
+    if (p1.hp <= 0 && p2.hp <= 0) winner = 'draw';
+    else if (p1.hp <= 0) winner = 'p2';
+    else if (p2.hp <= 0) winner = 'p1';
+  }
+  updateParticles();
+
+  drawBackground();
+  p1.draw();
+  p2.draw();
+  drawParticles();
+  drawHUD(p1, p2, winner);
+
+  requestAnimationFrame(loop);
+}
+
+fitCanvas();
+initGame();
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
